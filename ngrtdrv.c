@@ -1,3 +1,11 @@
+/*
+ * Linux char driver
+ *
+ * Copyright (C) 2021 Kirill Yustitskii
+ *
+ * Authors:  Kirill Yustitskii  <inst: yustitskii_kirill>
+ */
+
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -8,7 +16,7 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 
-#define DRIVER_NAME "chrdriver"
+#define DRIVER_NAME "chrdriver"                                                
 
 static int chr_major = 0;
 module_param(chr_major, int, 0644);
@@ -19,150 +27,229 @@ module_param(chr_minor, int, 0644);
 MODULE_PARM_DESC(chr_major, "Allows you to set own chr_major number");
 
 struct chr_session {
-	char *buf;
-	unsigned long byte_read;
-	unsigned long byte_write;
-	int cur_session;
-	unsigned int buf_len;
+    unsigned int session_id;    /* session id */
+    char *buf;                  /* buffer for data */
+    size_t buf_len;             /* max buffer len */
+    size_t byte_read;           /* how many bytes were read */
+    size_t byte_write;          /* how many bytes were written */
 };
 
 struct chr_dev {
-	dev_t devt;
-	struct cdev cdev;
-	int session_count;
-	struct mutex chr_mutex;
-	struct chr_session *session;
-	unsigned long total_byte_read;
-	unsigned long total_byte_write;
+    struct mutex chr_mutex;         /* avoid race condition for session id */ 
+    struct chr_session *session;    /* current session */
+    int session_count;              /* count of sessions */
+    size_t total_byte_read;         /* total bytes read*/
+    size_t total_byte_write;        /* total written bytes */
+    
+    struct cdev cdev;               /* char device */    
+    struct class *cl;               /* char device class  */
+    struct device *device;          /* device associated with char_device  */
+    dev_t devt;                     /* char device number */
 } chrdev;
+
+static size_t get_max_byte(struct chr_dev *dev, size_t count)
+{   
+    return dev->session->buf_len - dev->session->byte_write - 1;
+}
+
+/* ----------------------------
+ * for cleanup handling
+ * ----------------------------
+ */
+
+enum chr_clean {
+    CHR_CLEAN_BUFFER, 
+    CHR_CLEAN_SESSION,
+};
+
+void cleanup_handler(enum chr_clean index)
+{
+    switch (index) {
+    case CHR_CLEAN_BUFFER:
+        kfree(dev->session->buf);
+        /* fall through */
+    }    
+}
+
+/* ----------------------------
+ * for file operations
+ * ----------------------------
+ */
 
 static int chr_open(struct inode *inode, struct file *filp)
 {
-	struct chr_dev *dev;
+    struct chr_dev *dev;
 
-	pr_debug("%s: Driver opened\n", DRIVER_NAME);
+    pr_debug("%s: open function called\n", DRIVER_NAME);
 
-	dev = container_of(inode->i_cdev, struct chr_dev, cdev);
-	filp->private_data = dev;
+    dev = container_of(inode->i_cdev, struct chr_dev, cdev);
+    filp->private_data = dev;
+    
+    /* create a separate session for each process */
+    dev->session = kmalloc(sizeof (struct chr_session), GFP_KERNEL);
+    if (IS_ERR(dev->session)) {
+        pr_err("%s: can't allocate memory for session\n", 
+                DRIVER_NAME);
+        return PTR_ERR(dev->session);
+    }
+    
+    /* set default values */
+    dev->session->byte_read     = 0;
+    dev->session->byte_write    = 0;
+    dev->session->buf_len       = 1024;
+    
+    /* get a unique session id */
+    mutex_lock(&dev->chr_mutex);
+    dev->session_count++;
+    dev->session->session_id = dev->session_count;
+    mutex_unlock(&dev->chr_mutex);
 
-	dev->session = kmalloc(sizeof (struct chr_session), GFP_KERNEL);
-	if (!dev->session) {
-		pr_debug("%s: Can't allocate memmory for session\n", DRIVER_NAME);
-		return -1;
-	}
-	dev->session->byte_read = 0;
-	dev->session->byte_write = 0;
-	dev->session->buf_len = 1000;
-
-	mutex_lock(&dev->chr_mutex);
-	dev->session_count++;
-	dev->session->cur_session = dev->session_count;
-	mutex_unlock(&dev->chr_mutex);
-
-	return 0;
+    return 0;
 }
 
 static int chr_release(struct inode *inode, struct file *filp)
-{	
-	struct chr_dev *dev;
+{    
+    struct chr_dev *dev;
 
-	pr_debug("%s: Driver closed\n", DRIVER_NAME);
+    pr_debug("%s: release function called\n", DRIVER_NAME);
 
-	dev = filp->private_data;
-	mutex_lock(&dev->chr_mutex);
-	dev->total_byte_read += dev->session->byte_read;
-	dev->total_byte_write += dev->session->byte_write;
-	mutex_unlock(&dev->chr_mutex);
+    dev = filp->private_data;
+    
+    /* increase the total number of read/written bytes */
+    mutex_lock(&dev->chr_mutex);
+    dev->total_byte_read += dev->session->byte_read;
+    dev->total_byte_write += dev->session->byte_write;
+    mutex_unlock(&dev->chr_mutex);
+    
+    /* free allocated memmory */
+    if (dev->session->buf)
+        kfree(dev->session->buf);
+        
+    kfree(dev->session);
 
-	if (dev->session->buf)
-		kfree(dev->session->buf);
-	kfree(dev->session);
-
-	return 0;
+    return 0;
 }
 
-static ssize_t chr_read(struct file *filp, char __user *buf, size_t count, loff_f *pos)
+static ssize_t chr_read(struct file *filp, char __user *buf, 
+                    size_t count, loff_f *pos)
 {
-	struct chr_dev *dev;
+    struct chr_dev *dev;
+    size_t ret;    
 
-	pr_debug("%s: Read function\n", DRIVER_NAME);
+    pr_debug("%s: read function called\n", DRIVER_NAME);
 
-	dev = filp->private_data;
-	if (!dev->session->byte_write)
-		return 0;		// nothing was written
+    dev = filp->private_data;
+    
+    /* check if something was written  */
+    if (!dev->session->byte_write)
+        return -ENODATA;
 
-	if ()
+    ret = copy_to_user();
+    if (ret != 0) {
+        pr_warn("%s: can't \n", DRIVER_NAME);
+    }
 
 }
 
-static ssize_t chr_write(struct file *filp, const char __user *buf, size_t count, loff_t *pos)
+static ssize_t chr_write(struct file *filp, const char __user *buf, 
+                        size_t count, loff_t *pos)
+{
+    struct chr_dev *dev;
+    size_t ret;
+    size_t max_len;
+
+    pr_debug("%s: write function called\n", DRIVER_NAME);
+    
+    dev = filp->private_data;
+    
+    /* allocate memmory for buffer */
+    dev->session->buf = kmalloc(dev->session->buf_len, GFP_KERNEL);
+    if (IS_ERR(dev->session->buf)) {
+        pr_err("%s: can't allocate memory for buffer\n", 
+                DRIVER_NAME);
+        return PTR_ERR(dev->session->buf);
+    }
+    
+    /* check max free space in buffer */
+    max_len = get_max_byte();
+    if (!max_len)       /* buffer if full */
+        return -ENOMEM;
+        
+    if (count > max_len) {
+        pr_warn("%s: out of memory for buffer\n", DRIVER_NAME);
+        count = max_len;
+    }
+    
+    /* write data to buffer */
+    ret = copy_from_user(dev->session->buf, buf, count)
+    if (ret < 0) {
+        pr_err("%s: can't write to local buffer\n", DRIVER_NAME)
+        return ret;
+    }
+    
+    dev->session->byte_write += count;
+        
+    return count;
+}
+
+/*static long chr_unlocked_ioctl(struct file *filp, unsigned int cmd, 
+                            unsigned long arg)
 {
 
-	pr_debug("%s: Write function\n", DRIVER_NAME);
-
-		dev->session->buf = kmalloc(1000, GFP_KERNEL);
-	if (!dev->session->buf) {
-		pr_debug("%s: Can't allocate memmory for buffer\n", DRIVER_NAME);
-		kfree(dev->session);
-		return -1;
-	}
-
-
 }
-
-static long chr_unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
-{
-
-}
+*/
 
 static const struct file_operations fops = {
-	.owner			= THIS_MODULE,
-	.open 			= chr_open,
-	.release 		= chr_release,
-	.read			= chr_read,
-	.write			= chr_write,
-	.unlocked_ioctl	= chr_unlocked_ioctl,
+    .owner          = THIS_MODULE,
+    .open           = chr_open,
+    .release        = chr_release,
+    .read           = chr_read,
+    .write          = chr_write,
+    /*.unlocked_ioctl = chr_unlocked_ioctl,*/
 };
 
 static int __init chr_init(void)
 {
-	int ret;
+    int ret;
+    
+    pr_debug("%s: driver loaded\n", DRIVER_NAME);
 
-	if (chr_major) {
-		chrdev.devt = MKDEV(chr_major, chr_minor);
-		ret = register_chrdev_region(chrdev.devt, 1, DRIVER_NAME);
-	} else {
-		ret = alloc_chrdev_region(&chrdev.devt, chr_minor, 1, DRIVER_NAME);
-		chr_major = MAJOR(chrdev.devt);
-	}
+    if (chr_major) {
+        chrdev.devt = MKDEV(chr_major, chr_minor);
+        ret = register_chrdev_region(chrdev.devt, 1, DRIVER_NAME);
+    } else {
+        ret = alloc_chrdev_region(&chrdev.devt, chr_minor, 1, DRIVER_NAME);
+        chr_major = MAJOR(chrdev.devt);
+    }
 
-	if (ret < 0) {
-		pr_debug("%s: Can't register char device region\n", DRIVER_NAME);
-		return ret;
-	} else
-		pr_debug("%s: Char device has own region\n", DRIVER_NAME);
+    if (ret < 0) {
+        pr_debug("%s: can't register char device region\n", DRIVER_NAME);
+        return ret;
+    } 
+    
+    cdev_init(&chrdev.cdev, &fops);
+    ret = cdev_add(&chrdev.cdev, chrdev.devt, 1);
+    if (ret < 0) {
+        pr_debug("%s: can't add char device to system\n", DRIVER_NAME);
+        return ret;
+    } else 
+        pr_debug("%s: char device has been registered in system\n", 
+                DRIVER_NAME);
 
-	cdev_init(&chrdev.cdev, &fops);
-	ret = cdev_add(&chrdev.cdev, chrdev.devt, 1);
-	if (ret < 0) {
-		pr_debug("%s: Can't add char device to system\n", DRIVER_NAME);
-		return ret;
-	} else 
-		pr_debug("%s: Char device has been registered in system\n", DRIVER_NAME);
+    /* set default values */
+    chrdev.session_count    = 0;
+    chrdev.total_byte_read  = 0;
+    chrdev.total_byte_write = 0;
+    chrdev.session          = NULL;
+    mutex_init(&chrdev.chr_mutex);
 
-	chrdev.session_count = 0;
-	chrdev.session = NULL;
-	chrdev.total_byte_read = 0;
-	chrdev.total_byte_write = 0;
-	mutex_init(&chrdev.chr_mutex);
-
-	return 0;
+    return 0;
 }
 
 static void __exit chr_exit(void)
 {
-	cdev_del(&chrdev.cdev);
-	unregister_chrdev_region(chrdev.devt, 1);
+    cleanup_handler();
+    pr_debug("%s: driver unloaded\n", DRIVER_NAME);
 
 }
 
@@ -170,3 +257,5 @@ module_init(chr_init);
 module_exit(chr_exit);
 
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Kirill Yustitskii <inst: yustitskii_kirill>");
+MODULE_DESCRIPTION("Simple Linux char driver");
