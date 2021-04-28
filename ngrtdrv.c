@@ -160,16 +160,20 @@ static ssize_t chr_read(struct file *filp, char __user *buf,
     dev = filp->private_data;
     
     /* check if buffer is empty */
-    if (!dev->session->byte_write)
+    if (!dev->session->byte_write) {
+        pr_warn("%s: buffer is empty\n", DRIVER_NAME);
         return -ENODATA;
+    }
     
     /* at the end of file */
-    if (*pos >= dev->session->byte_write)
+    if (*pos > dev->session->byte_write) {
+        pr_debug("%s: at the end of file\n", DRIVER_NAME);
         return 0;
+    }
     
     if (count > dev->session->byte_write) {
-        pr_warn("%s: try to read more bytes than it actually exist\n",
-            DRIVER_NAME);
+        pr_warn("%s: try to read {%ld} bytes when {%ld} actually exist\n",
+            DRIVER_NAME, count, dev->session->byte_write);
         count = dev->session->byte_write;
     }
             
