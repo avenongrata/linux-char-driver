@@ -59,6 +59,8 @@ static size_t get_max_byte(struct chr_dev *dev, size_t count)
 
 enum chr_clean {
     CHR_CHRDEV_DELETE,
+    CHR_DEVICE_DESTROY,
+    CHR_CLASS_DESTROY,
     CHR_UNREGISTER_CHRDEV
 };
 
@@ -67,6 +69,12 @@ void cleanup_handler(struct chr_dev *dev, enum chr_clean index)
     switch (index) {
     case CHR_CHRDEV_DELETE:
         cdev_del(&dev->cdev);
+        /* fall through */
+    case CHR_DEVICE_DESTROY:
+        device_destroy(dev->cl, dev->devt);
+        /* fall through */
+    case CHR_CLASS_DESTROY:
+        class_destroy(dev->cl);
         /* fall through */
     case CHR_UNREGISTER_CHRDEV:
         unregister_chrdev_region(dev->devt, 1);
@@ -254,11 +262,27 @@ static int __init chr_init(void)
         return ret;
     } 
     
+    /* create class and device */
+    chrdev.cl = class_create(THIS_MODULE, DRIVER_NAME);
+    if (IS_ERR(chrdev.cl)) {
+        pr_err("%s: can't create class\n", DRIVER_NAME);
+        cleanup_handler(&chrdev, CHR_UNREGISTER_CHRDEV);
+        return PTR_ERR(chrdev.cl);
+    }
+    
+    chrdev.device = device_create(chrdev.cl, NULL, chrdev.devt,
+                                NULL, DRIVER_NAME);
+    if (IS_ERR(chrdev.device)) {
+        pr_err("%s: can't create device\n", DRIVER_NAME);
+        cleanup_handler(&chrdev, CHR_CLASS_DESTROY);
+        return PTR_ERR(chrdev.device);
+    }
+    
     cdev_init(&chrdev.cdev, &fops);
     ret = cdev_add(&chrdev.cdev, chrdev.devt, 1);
     if (ret < 0) {
         pr_debug("%s: can't add char device to system\n", DRIVER_NAME);
-        cleanup_handler(&chrdev, CHR_UNREGISTER_CHRDEV);
+        cleanup_handler(&chrdev, CHR_DEVICE_DESTROY);
         return ret;
     }
 
