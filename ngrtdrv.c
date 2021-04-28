@@ -10,13 +10,13 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/cdev.h>
-#include <linux/kdev.h>
+#include <linux/kdev_t.h>
 #include <linux/sysfs.h>
 #include <linux/fs.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
 
-#define DRIVER_NAME "chrdriver"                                                
+#define DRIVER_NAME "ngrtdrv"                                                
 
 static int chr_major = 0;
 module_param(chr_major, int, 0644);
@@ -58,15 +58,18 @@ static size_t get_max_byte(struct chr_dev *dev, size_t count)
  */
 
 enum chr_clean {
-    CHR_CLEAN_BUFFER, 
-    CHR_CLEAN_SESSION,
+    CHR_CHRDEV_DELETE,
+    CHR_UNREGISTER_CHRDEV
 };
 
-void cleanup_handler(enum chr_clean index)
+void cleanup_handler(struct chr_dev *dev, enum chr_clean index)
 {
     switch (index) {
-    case CHR_CLEAN_BUFFER:
-        kfree(dev->session->buf);
+    case CHR_CHRDEV_DELETE:
+        cdev_del(&dev->cdev);
+        /* fall through */
+    case CHR_UNREGISTER_CHRDEV:
+        unregister_chrdev_region(dev->devt, 1);
         /* fall through */
     }    
 }
@@ -121,6 +124,14 @@ static int chr_release(struct inode *inode, struct file *filp)
     dev->total_byte_write += dev->session->byte_write;
     mutex_unlock(&dev->chr_mutex);
     
+    /* show statistics */
+    pr_debug("%s: current session id = %d\n", DRIVER_NAME, 
+            dev->session->session_id);
+    pr_debug("%s: bytes read = %ld\n", DRIVER_NAME, 
+            dev->session->byte_read);
+    pr_debug("%s: written bytes = %ld\n", DRIVER_NAME, 
+            dev->session->byte_write);
+    
     /* free allocated memmory */
     if (dev->session->buf)
         kfree(dev->session->buf);
@@ -131,7 +142,7 @@ static int chr_release(struct inode *inode, struct file *filp)
 }
 
 static ssize_t chr_read(struct file *filp, char __user *buf, 
-                    size_t count, loff_f *pos)
+                    size_t count, loff_t *pos)
 {
     struct chr_dev *dev;
     size_t ret;    
@@ -140,15 +151,30 @@ static ssize_t chr_read(struct file *filp, char __user *buf,
 
     dev = filp->private_data;
     
-    /* check if something was written  */
+    /* check if buffer is empty */
     if (!dev->session->byte_write)
         return -ENODATA;
-
-    ret = copy_to_user();
-    if (ret != 0) {
-        pr_warn("%s: can't \n", DRIVER_NAME);
+    
+    /* at the end of file */
+    if (*pos >= dev->session->byte_write)
+        return 0;
+    
+    if (count > dev->session->byte_write) {
+        pr_warn("%s: try to read more bytes than it actually exist\n",
+            DRIVER_NAME);
+        count = dev->session->byte_write;
     }
-
+            
+    ret = copy_to_user(buf, dev->session->buf, count);
+    if (ret < 0) {
+        pr_err("%s: can't read from local buffer\n", DRIVER_NAME);
+        return ret;
+    }
+    
+    dev->session->byte_read += count;
+    *pos += count;
+    
+    return count;    
 }
 
 static ssize_t chr_write(struct file *filp, const char __user *buf, 
@@ -162,7 +188,7 @@ static ssize_t chr_write(struct file *filp, const char __user *buf,
     
     dev = filp->private_data;
     
-    /* allocate memmory for buffer */
+    /* allocate memmory for buffer (do it here for more optimization)*/
     dev->session->buf = kmalloc(dev->session->buf_len, GFP_KERNEL);
     if (IS_ERR(dev->session->buf)) {
         pr_err("%s: can't allocate memory for buffer\n", 
@@ -171,7 +197,7 @@ static ssize_t chr_write(struct file *filp, const char __user *buf,
     }
     
     /* check max free space in buffer */
-    max_len = get_max_byte();
+    max_len = get_max_byte(&chrdev, count);
     if (!max_len)       /* buffer if full */
         return -ENOMEM;
         
@@ -181,13 +207,14 @@ static ssize_t chr_write(struct file *filp, const char __user *buf,
     }
     
     /* write data to buffer */
-    ret = copy_from_user(dev->session->buf, buf, count)
+    ret = copy_from_user(dev->session->buf, buf, count);
     if (ret < 0) {
-        pr_err("%s: can't write to local buffer\n", DRIVER_NAME)
+        pr_err("%s: can't write to local buffer\n", DRIVER_NAME);
         return ret;
     }
     
     dev->session->byte_write += count;
+    *pos += count;
         
     return count;
 }
@@ -231,10 +258,9 @@ static int __init chr_init(void)
     ret = cdev_add(&chrdev.cdev, chrdev.devt, 1);
     if (ret < 0) {
         pr_debug("%s: can't add char device to system\n", DRIVER_NAME);
+        cleanup_handler(&chrdev, CHR_UNREGISTER_CHRDEV);
         return ret;
-    } else 
-        pr_debug("%s: char device has been registered in system\n", 
-                DRIVER_NAME);
+    }
 
     /* set default values */
     chrdev.session_count    = 0;
@@ -248,7 +274,13 @@ static int __init chr_init(void)
 
 static void __exit chr_exit(void)
 {
-    cleanup_handler();
+    pr_debug("%s: total bytes read = %ld\n", DRIVER_NAME, 
+            chrdev.total_byte_read);
+    pr_debug("%s: total written bytes = %ld\n", DRIVER_NAME, 
+            chrdev.total_byte_write);
+    pr_debug("%s: session count = %d\n", DRIVER_NAME, 
+            chrdev.session_count);
+    cleanup_handler(&chrdev, CHR_CHRDEV_DELETE);
     pr_debug("%s: driver unloaded\n", DRIVER_NAME);
 
 }
