@@ -17,22 +17,26 @@ int test1(void)
     
     /* open device driver file */
     fp = fopen("/dev/ngrtdrv", "r+");
-    if (!fp) {
+    if (!fp)
+    {
         printf("Test 1: can't open file\n");
         return -ENOENT;
     }
     
     /* write to file string and get this string */
     fputs("Testing string", fp);
-    if (!fgets(buf, 1024, fp)) {
+    if (!fgets(buf, 1024, fp))
+    {
         printf("Test 1: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 1: data = %s\n", buf);
     
     /* close file */
     ret = fclose(fp);
-    if (ret) {
+    if (ret)
+    {
         printf("Test 1: can't close the file\n");
         return ret;
     }
@@ -48,22 +52,26 @@ int test2(void)
     
     /* open device driver file */
     fp = fopen("/dev/ngrtdrv", "r+");
-    if (!fp) {
+    if (!fp)
+    {
         printf("Test 2: can't open file\n");
         return -ENOENT;
     }
     
     /* write to file string and get this string */
     fputs("Testing string", fp);
-    if (!fgets(buf, 10, fp)) {
+    if (!fgets(buf, 10, fp))
+    {
         printf("Test 2: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 2: data = %s\n", buf);
         
     /* close file */
     ret = fclose(fp);
-    if (ret) {
+    if (ret)
+    {
         printf("Test 2: can't close the file\n");
         return ret;
     }
@@ -79,22 +87,26 @@ int test3(void)
     
     /* open device driver file */
     fp = fopen("/dev/ngrtdrv", "r+");
-    if (!fp) {
+    if (!fp)
+    {
         printf("Test 3: can't open file\n");
         return -ENOENT;
     }
     
     /* write to file string and get this string */
     fputs("Test 3: testing string", fp);
-    if (!fgets(buf, 3000, fp)) {
+    if (!fgets(buf, 3000, fp))
+    {
         printf("Test 3: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 3: data = %s\n", buf);
     
     /* close file */
     ret = fclose(fp);
-    if (ret) {
+    if (ret)
+    {
         printf("Test 3: can't close the file\n");
         return ret;
     }
@@ -110,7 +122,8 @@ int test4(void)
     
     /* open device driver file */
     fp = fopen("/dev/ngrtdrv", "r+");
-    if (!fp) {
+    if (!fp)
+    {
         printf("Test 4: can't open file\n");
         return -ENOENT;
     }
@@ -118,15 +131,18 @@ int test4(void)
     /* write to file string and get this string */
     fputs("Testing string", fp);
     fputs("Again testing string", fp);
-    if (!fgets(buf, 1025, fp)) {
+    if (!fgets(buf, 1025, fp))
+    {
         printf("Test 4: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 4: data = %s\n", buf);
     
     /* close file */
     ret = fclose(fp);
-    if (ret) {
+    if (ret)
+    {
         printf("Test 4: can't close the file\n");
         return ret;
     }
@@ -142,7 +158,8 @@ int test5(void)
     
     /* open device driver file */
     fp = fopen("/dev/ngrtdrv", "r+");
-    if (!fp) {
+    if (!fp)
+    {
         printf("Test 5: can't open file\n");
         return -ENOENT;
     }
@@ -150,21 +167,26 @@ int test5(void)
     /* write to file string and get this string */
     fputs("Testing string", fp);
     fputs("Again testing string", fp);
-    if (!fgets(buf, 10, fp)) {
+    if (!fgets(buf, 10, fp))
+    {
         printf("Test 5: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 5: data = %s\n", buf);
     
-    if (!fgets(buf, 10, fp)) {
+    if (!fgets(buf, 10, fp))
+    {
         printf("Test 5: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 5: data = %s\n", buf);
     
     /* close file */
     ret = fclose(fp);
-    if (ret) {
+    if (ret)
+    {
         printf("Test 5: can't close the file\n");
         return ret;
     }
@@ -180,28 +202,34 @@ int test6(void)
     
     /* open device driver file */
     fp = fopen("/dev/ngrtdrv", "r+");
-    if (!fp) {
+    if (!fp)
+    {
         printf("Test 6: can't open file\n");
         return -ENOENT;
     }
     
     /* write to file string and get this string */
     fputs("Testing string", fp);
-    if (!fgets(buf, 100, fp)) {
+    if (!fgets(buf, 100, fp))
+    {
         printf("Test 6: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 6: data = %s\n", buf);
     
-    if (!fgets(buf, 100, fp)) {
+    if (!fgets(buf, 100, fp))
+    {
         printf("Test 6: error by reading file\n");
         return -EIO;
     }
+
     printf("Test 6: data = %s\n", buf);     
     
     /* close file */
     ret = fclose(fp);
-    if (ret) {
+    if (ret)
+    {
         printf("Test 6: can't close the file\n");
         return ret;
     }

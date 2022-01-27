@@ -16,7 +16,11 @@
 #include <linux/mutex.h>
 #include <linux/slab.h>
 
-#define DRIVER_NAME "ngrtdrv"                                                
+/*----------------------------------------------------------------------------*/
+
+#define DRIVER_NAME "ngrtdrv"
+
+/*----------------------------------------------------------------------------*/
 
 static int chr_major = 0;
 module_param(chr_major, int, 0644);
@@ -26,15 +30,19 @@ static int chr_minor = 0;
 module_param(chr_minor, int, 0644); 
 MODULE_PARM_DESC(chr_major, "Allows you to set own chr_major number");
 
-struct chr_session {
-    unsigned int session_id;    /* session id */
-    char *buf;                  /* buffer for data */
-    size_t buf_len;             /* max buffer len */
-    size_t byte_read;           /* how many bytes were read */
-    size_t byte_write;          /* how many bytes were written */
+/*----------------------------------------------------------------------------*/
+
+struct chr_session
+{
+    unsigned int session_id;        /* session id */
+    char *buf;                      /* buffer for data */
+    size_t buf_len;                 /* max buffer len */
+    size_t byte_read;               /* how many bytes were read */
+    size_t byte_write;              /* how many bytes were written */
 };
 
-struct chr_dev {
+struct chr_dev
+{
     struct mutex chr_mutex;         /* avoid race condition for session id */ 
     struct chr_session *session;    /* current session */
     int session_count;              /* count of sessions */
@@ -43,21 +51,22 @@ struct chr_dev {
     
     struct cdev cdev;               /* char device */    
     struct class *cl;               /* char device class  */
-    struct device *device;          /* device associated with char_device  */
+    struct device *device;          /* device associated with char_device */
     dev_t devt;                     /* char device number */
 } chrdev;
+
+/*----------------------------------------------------------------------------*/
 
 static size_t get_max_byte(struct chr_dev *dev, size_t count)
 {   
     return dev->session->buf_len - dev->session->byte_write - 1;
 }
 
-/* ----------------------------
- * for cleanup handling
- * ----------------------------
- */
+/*----------------------------------------------------------------------------*/
 
-enum chr_clean {
+/* for cleanup handling */
+enum chr_clean
+{
     CHR_CHRDEV_DELETE,
     CHR_DEVICE_DESTROY,
     CHR_CLASS_DESTROY,
@@ -66,7 +75,8 @@ enum chr_clean {
 
 void cleanup_handler(struct chr_dev *dev, enum chr_clean index)
 {
-    switch (index) {
+    switch (index)
+    {
     case CHR_CHRDEV_DELETE:
         cdev_del(&dev->cdev);
         /* fall through */
@@ -82,10 +92,7 @@ void cleanup_handler(struct chr_dev *dev, enum chr_clean index)
     }    
 }
 
-/* ----------------------------
- * for file operations
- * ----------------------------
- */
+/*----------------------------------------------------------------------------*/
 
 static int chr_open(struct inode *inode, struct file *filp)
 {
@@ -98,7 +105,8 @@ static int chr_open(struct inode *inode, struct file *filp)
     
     /* create a separate session for each process */
     dev->session = kmalloc(sizeof (struct chr_session), GFP_KERNEL);
-    if (IS_ERR(dev->session)) {
+    if (IS_ERR(dev->session))
+    {
         pr_err("%s: can't allocate memory for session\n", 
                 DRIVER_NAME);
         return PTR_ERR(dev->session);
@@ -117,6 +125,8 @@ static int chr_open(struct inode *inode, struct file *filp)
 
     return 0;
 }
+
+/*----------------------------------------------------------------------------*/
 
 static int chr_release(struct inode *inode, struct file *filp)
 {    
@@ -149,6 +159,8 @@ static int chr_release(struct inode *inode, struct file *filp)
     return 0;
 }
 
+/*----------------------------------------------------------------------------*/
+
 static ssize_t chr_read(struct file *filp, char __user *buf, 
                     size_t count, loff_t *pos)
 {
@@ -160,25 +172,29 @@ static ssize_t chr_read(struct file *filp, char __user *buf,
     dev = filp->private_data;
     
     /* check if buffer is empty */
-    if (!dev->session->byte_write) {
+    if (!dev->session->byte_write)
+    {
         pr_warn("%s: buffer is empty\n", DRIVER_NAME);
         return -ENODATA;
     }
     
     /* at the end of file */
-    if (*pos > dev->session->byte_write) {
+    if (*pos > dev->session->byte_write)
+    {
         pr_debug("%s: at the end of file\n", DRIVER_NAME);
         return 0;
     }
     
-    if (count > dev->session->byte_write) {
+    if (count > dev->session->byte_write)
+    {
         pr_warn("%s: try to read {%ld} bytes when {%ld} actually exist\n",
             DRIVER_NAME, count, dev->session->byte_write);
         count = dev->session->byte_write;
     }
             
     ret = copy_to_user(buf, dev->session->buf, count);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         pr_err("%s: can't read from local buffer\n", DRIVER_NAME);
         return ret;
     }
@@ -188,6 +204,8 @@ static ssize_t chr_read(struct file *filp, char __user *buf,
     
     return count;    
 }
+
+/*----------------------------------------------------------------------------*/
 
 static ssize_t chr_write(struct file *filp, const char __user *buf, 
                         size_t count, loff_t *pos)
@@ -202,7 +220,8 @@ static ssize_t chr_write(struct file *filp, const char __user *buf,
     
     /* allocate memmory for buffer (do it here for more optimization)*/
     dev->session->buf = kmalloc(dev->session->buf_len, GFP_KERNEL);
-    if (IS_ERR(dev->session->buf)) {
+    if (IS_ERR(dev->session->buf))
+    {
         pr_err("%s: can't allocate memory for buffer\n", 
                 DRIVER_NAME);
         return PTR_ERR(dev->session->buf);
@@ -213,14 +232,16 @@ static ssize_t chr_write(struct file *filp, const char __user *buf,
     if (!max_len)       /* buffer if full */
         return -ENOMEM;
         
-    if (count > max_len) {
+    if (count > max_len)
+    {
         pr_warn("%s: out of memory for buffer\n", DRIVER_NAME);
         count = max_len;
     }
     
     /* write data to buffer */
     ret = copy_from_user(dev->session->buf, buf, count);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         pr_err("%s: can't write to local buffer\n", DRIVER_NAME);
         return ret;
     }
@@ -231,44 +252,50 @@ static ssize_t chr_write(struct file *filp, const char __user *buf,
     return count;
 }
 
-/*static long chr_unlocked_ioctl(struct file *filp, unsigned int cmd, 
-                            unsigned long arg)
+/*----------------------------------------------------------------------------*/
+
+static const struct file_operations fops =
 {
-
-}
-*/
-
-static const struct file_operations fops = {
     .owner          = THIS_MODULE,
     .open           = chr_open,
     .release        = chr_release,
     .read           = chr_read,
     .write          = chr_write,
-    /*.unlocked_ioctl = chr_unlocked_ioctl,*/
 };
+
+/*----------------------------------------------------------------------------*/
 
 static int __init chr_init(void)
 {
-    int ret;
+    int ret = 0;
     
     pr_debug("%s: driver loaded\n", DRIVER_NAME);
 
-    if (chr_major) {
+    /*------------------------------------------------------------------------*/
+
+    if (chr_major)
+    {
         chrdev.devt = MKDEV(chr_major, chr_minor);
         ret = register_chrdev_region(chrdev.devt, 1, DRIVER_NAME);
-    } else {
+    }
+    else
+    {
         ret = alloc_chrdev_region(&chrdev.devt, chr_minor, 1, DRIVER_NAME);
         chr_major = MAJOR(chrdev.devt);
     }
 
-    if (ret < 0) {
+    if (ret < 0)
+    {
         pr_debug("%s: can't register char device region\n", DRIVER_NAME);
         return ret;
     } 
+
+    /*------------------------------------------------------------------------*/
     
     /* create class and device */
     chrdev.cl = class_create(THIS_MODULE, DRIVER_NAME);
-    if (IS_ERR(chrdev.cl)) {
+    if (IS_ERR(chrdev.cl))
+    {
         pr_err("%s: can't create class\n", DRIVER_NAME);
         cleanup_handler(&chrdev, CHR_UNREGISTER_CHRDEV);
         return PTR_ERR(chrdev.cl);
@@ -276,19 +303,25 @@ static int __init chr_init(void)
     
     chrdev.device = device_create(chrdev.cl, NULL, chrdev.devt,
                                 NULL, DRIVER_NAME);
-    if (IS_ERR(chrdev.device)) {
+    if (IS_ERR(chrdev.device))
+    {
         pr_err("%s: can't create device\n", DRIVER_NAME);
         cleanup_handler(&chrdev, CHR_CLASS_DESTROY);
         return PTR_ERR(chrdev.device);
     }
+
+    /*------------------------------------------------------------------------*/
     
     cdev_init(&chrdev.cdev, &fops);
     ret = cdev_add(&chrdev.cdev, chrdev.devt, 1);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         pr_debug("%s: can't add char device to system\n", DRIVER_NAME);
         cleanup_handler(&chrdev, CHR_DEVICE_DESTROY);
         return ret;
     }
+
+    /*------------------------------------------------------------------------*/
 
     /* set default values */
     chrdev.session_count    = 0;
@@ -300,6 +333,8 @@ static int __init chr_init(void)
     return 0;
 }
 
+/*----------------------------------------------------------------------------*/
+
 static void __exit chr_exit(void)
 {
     pr_debug("%s: total bytes read = %ld\n", DRIVER_NAME, 
@@ -310,8 +345,9 @@ static void __exit chr_exit(void)
             chrdev.session_count);
     cleanup_handler(&chrdev, CHR_CHRDEV_DELETE);
     pr_debug("%s: driver unloaded\n", DRIVER_NAME);
-
 }
+
+/*----------------------------------------------------------------------------*/
 
 module_init(chr_init);
 module_exit(chr_exit);
